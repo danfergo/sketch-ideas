@@ -3,7 +3,35 @@ import pygame
 from pygame.locals import *
 import pymunk
 import pymunk.pygame_util
+from math import pi
+import os
 
+from entities.robot import Robot
+from entities.world import World
+from agent import Agent
+import threading
+
+
+import time, threading
+
+StartTime=time.time()
+
+class setInterval :
+    def __init__(self,interval,action) :
+        self.interval=interval
+        self.action=action
+        self.stopEvent=threading.Event()
+        thread=threading.Thread(target=self.__setInterval)
+        thread.start()
+
+    def __setInterval(self) :
+        nextTime=time.time()+self.interval
+        while not self.stopEvent.wait(nextTime-time.time()) :
+            nextTime+=self.interval
+            self.action()
+
+    def cancel(self) :
+        self.stopEvent.set()
 
 def loop(screen, space):
     clock = pygame.time.Clock()
@@ -18,105 +46,60 @@ def loop(screen, space):
             elif event.type == KEYDOWN and event.key == K_ESCAPE:
                 sys.exit(0)
 
-        yield i
+        yield 'BEFORE_DRAW', i
         i += 1
-        # ticks_to_next_ball -= 1
-        # if ticks_to_next_ball <= 0:
-        #     ticks_to_next_ball = 25
-        #     ball_shape = add_ball(space)
-        #     balls.append(ball_shape)
-
-        #
-
-        # balls_to_remove = []
-        # for ball in balls:
-        #     if ball.body.position.y < 150:
-        #         balls_to_remove.append(ball)
-        #
-        # for ball in balls_to_remove:
-        #     space.remove(ball, ball.body)
-        #     balls.remove(ball)
 
         space.debug_draw(draw_options)
 
-        space.step(1 / 50.0)
+        yield 'AFTER_DRAW', i
+
+        space.step(1 / 60.0)
 
         pygame.display.flip()
-        clock.tick(50)
+        clock.tick(60)
 
 
-def add_L(space):
-    """Add a inverted L shape with two joints"""
-    rotation_center_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-    rotation_center_body.position = (300, 300)
-
-    rotation_limit_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-    rotation_limit_body.position = (200, 300)
-
-    body = pymunk.Body(body_type=pymunk.Body.STATIC)
-    body.position = (10, 10)
-    l1 = pymunk.Segment(body, (0, 0), (580, 0), 5.0)
-    # l2 = pymunk.Segment(body, (-150.0, 0), (-150.0, 50.0), 5.0)
-
-    # rotation_center_joint = pymunk.PinJoint(body, rotation_center_body, (0,0), (0,0))
-    # joint_limit = 25
-    # rotation_limit_joint = pymunk.SlideJoint(body, rotation_limit_body, (-100,0), (0,0), 0, joint_limit)
-    #
-    space.add(l1, body)
-    # return l1,l2
-
-
-def add_robot(space):
-    """Add a inverted L shape with two joints"""
-    rotation_center_body = pymunk.Body(body_type=pymunk.Body.STATIC)
-    rotation_center_body.position = (300, 300)
-
-    # rotation_limit_body = pymunk.Body(body_type=pymunk.Body.DYNAMIC)
-    # rotation_limit_body.position = (200, 300)
-
-    body = pymunk.Body()
-    body.position = (300, 300)
-    l2 = pymunk.Segment(body, (-150.0, 0), (-150.0, 50.0), 5.0)
-    l2.density = 1
-
-    rotation_center_joint = pymunk.RatchetJoint(rotation_center_body, body, 0, 10)
-    # joint_limit = 25
-    # rotation_limit_joint = pymunk.RatchetJoint(body, rotation_limit_body, (-100,0), (0,0), 0, joint_limit)
-    #
-    space.add(l2, rotation_center_joint, body)
-    # return l1,l2
-
-
-def add_ball(space):
-    """Add a ball to the given space at a random position"""
-    mass = 1
-    radius = 14
-    inertia = pymunk.moment_for_circle(mass, 0, radius, (0, 0))
-    body = pymunk.Body(mass, inertia)
-    x = random.randint(120, 380)
-    body.position = x, 550
-    shape = pymunk.Circle(body, radius, (0, 0))
-    space.add(body, shape)
-    return shape
+def grab_screen(screen, position, size):
+    img = pygame.Surface(size)
+    img.blit(screen, (0, 0), (position, size))
+    numpy_img = pygame.surfarray.array3d(img)
+    numpy_img = numpy_img.swapaxes(0, 1)
+    return numpy_img
 
 
 def main():
+    x = 1600
+    y = 45
+    os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (x, y)
+
     pygame.init()
     pygame.display.set_caption("A quick robot simulation")
 
-    screen = pygame.display.set_mode((600, 600))
+    screen = pygame.display.set_mode((224, 224))
 
     space = pymunk.Space()
     space.gravity = (0.0, -900.0)
 
-    for i in loop(screen, space):
-        screen.fill((255, 255, 255))
-        if i == 0:
-            # add_ball(space)
-            add_L(space)
-            add_robot(space)
+    agent = Agent()
 
-        # print('fps')
+    robot = Robot((100, 100))
+    world = World()
+
+    space.add(*robot.build())
+    space.add(*world.build())
+
+    t = setInterval(0.1, lambda: agent.heartbit())
+
+    try:
+        for event, i in loop(screen, space):
+            if event == 'BEFORE_DRAW':
+                screen.fill((255, 255, 255))
+            else:
+                agent.on_vision(grab_screen(screen, (0, 0), (224, 224)))
+    except:
+        agent.die()
+        t.cancel()
+        # sys.exit()
 
 
 if __name__ == '__main__':
